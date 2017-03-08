@@ -1,6 +1,5 @@
-var url = "mongodb://sam1234:shortenurl@ds119220.mlab.com:19220/shorturl";
+var url = "mongodb://sam1234:shorturl@ds119220.mlab.com:19220/shorturl";
 var urlext = 'https://shortarse.herokuapp.com/';
-
 var validUrl = require('valid-url');
 var mongo = require("mongodb").MongoClient;
 var express = require("express");
@@ -13,81 +12,105 @@ app.listen(process.env.PORT, function(){
     console.log("connected");
 });
 
-app.get("/*", function(req, res){
+app.get("/*", function(req, res, next){
     var param = req.params[0];
-    var numtest = Number(param);
-    var bol = isNaN(numtest);
-    if(!bol){
-        res.send("it's a number");
-        var point = finder(param).long;
-        res.redirect(point);
+    var isnum = isNaN(Number(param));
+    
+    var callback = function(sendable) {
+        console.log("called");
+        res.send(sendable);
+    };
+    
+    if(validUrl.isUri(param)){
+         exist(param, callback);
     }
-    else if(validUrl.isUri(param)){
-        var object = shortener(param);
-        res.send(object);
+    else if(!isnum){
+        mongo.connect(url, function(err, db){
+            if(err) throw err;
+            var col5 = db.collection("urls");
+            col5.find({
+                "shortUrl": urlext + param
+            }).toArray(function(err, docs){
+                if(err) throw err;
+                if(docs.length==0){
+                    res.send("This URL does not exist");
+                }
+                else{
+                    var redirect = docs[0].longUrl;
+                    res.redirect(redirect);
+                }
+            });
+        });
     }
+    else{
+        res.send("This URL is invalid.");
+    }
+    
 });
 
 
-function finder(param){
+function exist(param, callback){
+    console.log("exist");
     mongo.connect(url, function(err, db){
         if(err) throw err;
-        var col = db.collection("urls");
-        var found = false;
-        col.find({
-            'short': urlext+param
+        var col1 = db.collection("urls");
+        col1.find({
+            "longUrl": param
+        },{
+            "_id":0,
+            "longUrl": 1,
+            "shortUrl": 1
         }).toArray(function(err, docs){
             if(err) throw err;
-            else if(docs.length>0) found = docs[0];
-        })
-        return found;
-    })
-}
-
-function shortener(longUrl){
-    console.log("shortening");
-    mongo.connect(url, function(err, db){
-        if(err) throw err;
-        var coll = db.collection("urls");
-        
-        var shortened = false;
-        coll.find({
-            'long': longUrl
-        }).toArray(function(err, docs){
-            if(err) throw err;
-            else if(docs.length>0){
-                console.log(docs);
-                shortened = docs[0];
+            if(docs.length==0){
+                randomNumber(param, callback);
+            }
+            else{
+                callback(docs[0]);
             }
         });
-        if(shortened) return shortened;
-        else{
-            var shortNum = numberPicker(coll);
-            
-            var obj = {
-                'long': longUrl,
-                'short': urlext + shortNum
-            }
-            
-            coll.insert(obj, function(err, data){
-                if(err) throw err;
-                shortened = data;
-            })
-            return shortened;
-        }
-        
+        db.close();
     });
 }
 
+function randomNumber(param, callback){
+    console.log("number");
+    var num = Math.floor((Math.random()*100)*(Math.random()*100));
+    mongo.connect(url, function(err, db){
+        if(err) throw err;
+        var col4 = db.collection("urls");
+        col4.find({
+            "shortUrl": urlext + num
+        }).toArray(function(err, docs){
+            if(err) throw err;
+            if(docs.length>0){
+                randomNumber(param, callback);
+            }
+            else{
+                shorten(param, num, callback);
+            }
+        });
+    });
+}
 
-
-function numberPicker(coll){
-     var num = (Math.random()*100)*(Math.random()*100);
-     coll.find({
-         'short': num
-     }).toArray(function(err, docs){
-         if(err) throw err;
-         else if(docs.length>1) numberPicker(coll);
-         else return num;
-     });
+function shorten(param, num, callback){
+    console.log("short");
+    var obj = {
+            "longUrl": param,
+            "shortUrl": urlext + num
+        };
+        mongo.connect(url, function(err, db){
+            if(err) throw err;
+            var col3 = db.collection("urls");
+            col3.insert(obj, function(err, docs){
+                if(err) throw err;
+                var send = {
+                    "longUrl": docs.longUrl,
+                    "shortUrl": docs.shortUrl
+                };
+                callback(send);
+            });
+                
+        });
+        
 }
